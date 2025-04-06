@@ -20,7 +20,7 @@ class RealTimeTranslator:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = self.model.to(self.device)
 
-        # Supported languages
+        # Supported languages with correct Google Translate codes
         self.languages = {
             'en': 'English',
             'fr': 'French',
@@ -29,6 +29,17 @@ class RealTimeTranslator:
             'de': 'German',
             'ja': 'Japanese',
             'te': 'Telugu'
+        }
+        
+        # Mapping from our language codes to Google Translator codes
+        self.google_codes = {
+            'en': 'en',
+            'fr': 'fr',
+            'hi': 'hi',
+            'es': 'es',
+            'de': 'de',
+            'ja': 'ja',
+            'te': 'te'
         }
 
     def speech_to_text(self, audio_path, source_lang):
@@ -51,7 +62,14 @@ class RealTimeTranslator:
     def translate_text(self, text, source_lang, target_lang):
         """Translate text using Google Translate"""
         try:
-            translation = GoogleTranslator(source=source_lang, target=target_lang).translate(text)
+            # Convert our language codes to Google Translator codes
+            google_source = self.google_codes.get(source_lang, source_lang)
+            google_target = self.google_codes.get(target_lang, target_lang)
+            
+            # Print for debugging
+            print(f"Translating from {google_source} to {google_target}: '{text}'")
+            
+            translation = GoogleTranslator(source=google_source, target=google_target).translate(text)
             return translation
         except Exception as e:
             return f"Error in translation: {str(e)}"
@@ -60,7 +78,9 @@ class RealTimeTranslator:
         """Convert text to speech using gTTS"""
         try:
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as fp:
-                tts = gTTS(text=text, lang=target_lang)
+                # gTTS uses the same language codes as Google Translate
+                tts_lang = self.google_codes.get(target_lang, target_lang)
+                tts = gTTS(text=text, lang=tts_lang)
                 tts.save(fp.name)
                 return fp.name
         except Exception as e:
@@ -80,17 +100,17 @@ class RealTimeTranslator:
 
                 # Speech to text
                 text = self.speech_to_text(audio_path, source_lang)
-                if "Error" in text:
+                if text.startswith("Error"):
                     return None, text, ""
 
                 # Translate text
                 translated_text = self.translate_text(text, source_lang, target_lang)
-                if "Error" in translated_text:
+                if translated_text.startswith("Error"):
                     return None, text, translated_text
 
                 # Text to speech (output audio)
                 output_audio_path = self.text_to_speech(translated_text, target_lang)
-                if "Error" in output_audio_path:
+                if output_audio_path.startswith("Error"):
                     return None, text, translated_text
 
                 # Load the generated audio
@@ -108,12 +128,12 @@ class RealTimeTranslator:
 
                 # Translate text
                 translated_text = self.translate_text(text_input, source_lang, target_lang)
-                if "Error" in translated_text:
+                if translated_text.startswith("Error"):
                     return None, text_input, translated_text
 
                 # Text to speech
                 output_audio_path = self.text_to_speech(translated_text, target_lang)
-                if "Error" in output_audio_path:
+                if output_audio_path.startswith("Error"):
                     return None, text_input, translated_text
 
                 # Load the generated audio
@@ -125,7 +145,9 @@ class RealTimeTranslator:
                 return (sr, output_audio), text_input, translated_text
 
         except Exception as e:
-            return None, f"Error: {str(e)}", f"Error: {str(e)}"
+            error_msg = f"Error: {str(e)}"
+            print(error_msg)  # Print error for debugging
+            return None, error_msg, error_msg
 
 def create_gradio_interface():
     translator = RealTimeTranslator()
@@ -135,14 +157,20 @@ def create_gradio_interface():
         gr.Markdown("# Real-time Language Translator")
         gr.Markdown("Choose between audio or text input. The system will translate and provide both text and audio output.")
         
-        input_type = gr.Radio(choices=["Audio", "Text"], value="Audio", label="Input Type")
+        input_type = gr.Radio(choices=["Audio", "Text"], value="Text", label="Input Type")
         
         with gr.Row():
             with gr.Column():
-                audio_input = gr.Audio(sources=["microphone"], type="numpy", label="Input Audio")
-                text_input = gr.Textbox(label="Input Text")
-                source_lang = gr.Dropdown(choices=list(translator.languages.keys()), value="en", label="Source Language")
-                target_lang = gr.Dropdown(choices=list(translator.languages.keys()), value="fr", label="Target Language")
+                audio_input = gr.Audio(sources=["microphone"], type="numpy", label="Input Audio", visible=False)
+                text_input = gr.Textbox(label="Input Text", value="Hello, how are you?")
+                
+                language_choices = [f"{code} - {name}" for code, name in translator.languages.items()]
+                source_lang = gr.Dropdown(choices=list(translator.languages.keys()), 
+                                         value="en", 
+                                         label="Source Language")
+                target_lang = gr.Dropdown(choices=list(translator.languages.keys()), 
+                                         value="fr", 
+                                         label="Target Language")
                 translate_button = gr.Button("Translate")
             
             with gr.Column():

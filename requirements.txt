@@ -1,0 +1,9 @@
+transformers
+torch
+gradio
+numpy
+deep-translator
+gtts
+librosa
+soundfile
+librosa

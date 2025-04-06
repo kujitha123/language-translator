@@ -3,7 +3,7 @@ import torch
 import gradio as gr
 import numpy as np
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
-from deep_translator import GoogleTranslator  # Replaced googletrans with deep-translator
+from deep_translator import GoogleTranslator
 from gtts import gTTS
 import librosa
 import tempfile
@@ -66,16 +66,16 @@ class RealTimeTranslator:
         except Exception as e:
             return f"Error in text-to-speech: {str(e)}"
 
-    def process_input(self, input_type, input_data, source_lang, target_lang, *args):
+    def process_input(self, input_type, audio_input, text_input, source_lang, target_lang):
         """Process input based on the selected type (audio or text)"""
         try:
             if input_type == "Audio":
-                if input_data is None:
+                if audio_input is None:
                     return None, "No audio input received", "Please provide audio input"
 
                 # Save input audio temporarily
                 with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as fp:
-                    sf.write(fp.name, input_data[1], input_data[0])
+                    sf.write(fp.name, audio_input[1], audio_input[0])
                     audio_path = fp.name
 
                 # Speech to text
@@ -88,21 +88,33 @@ class RealTimeTranslator:
                 if "Error" in translated_text:
                     return None, text, translated_text
 
-                return None, text, translated_text
+                # Text to speech (output audio)
+                output_audio_path = self.text_to_speech(translated_text, target_lang)
+                if "Error" in output_audio_path:
+                    return None, text, translated_text
+
+                # Load the generated audio
+                output_audio, sr = librosa.load(output_audio_path)
+
+                # Clean up temporary files
+                os.unlink(output_audio_path)
+                os.unlink(audio_path)  # Also clean up input audio
+
+                return (sr, output_audio), text, translated_text
 
             elif input_type == "Text":
-                if not input_data:
+                if not text_input:
                     return None, "No text input received", "Please provide text input"
 
                 # Translate text
-                translated_text = self.translate_text(input_data, source_lang, target_lang)
+                translated_text = self.translate_text(text_input, source_lang, target_lang)
                 if "Error" in translated_text:
-                    return None, input_data, translated_text
+                    return None, text_input, translated_text
 
                 # Text to speech
                 output_audio_path = self.text_to_speech(translated_text, target_lang)
                 if "Error" in output_audio_path:
-                    return None, input_data, translated_text
+                    return None, text_input, translated_text
 
                 # Load the generated audio
                 output_audio, sr = librosa.load(output_audio_path)
@@ -110,7 +122,7 @@ class RealTimeTranslator:
                 # Clean up temporary files
                 os.unlink(output_audio_path)
 
-                return (sr, output_audio), input_data, translated_text
+                return (sr, output_audio), text_input, translated_text
 
         except Exception as e:
             return None, f"Error: {str(e)}", f"Error: {str(e)}"
@@ -118,31 +130,54 @@ class RealTimeTranslator:
 def create_gradio_interface():
     translator = RealTimeTranslator()
 
-    # Create the Gradio interface
-    demo = gr.Interface(
-        fn=translator.process_input,
-        inputs=[
-            gr.Radio(choices=["Audio", "Text"], value="Audio", label="Input Type"),
-            gr.Audio(sources=["microphone"], type="numpy", label="Input Audio"),
-            gr.Textbox(label="Input Text"),
-            gr.Dropdown(choices=list(translator.languages.keys()), value="en", label="Source Language"),
-            gr.Dropdown(choices=list(translator.languages.keys()), value="fr", label="Target Language")
-        ],
-        outputs=[
-            gr.Audio(label="Translated Audio"),
-            gr.Textbox(label="Original Input"),
-            gr.Textbox(label="Translated Text")
-        ],
-        title="Real-time Language Translator",
-        description="Choose between audio or text input. If you select audio, the output will be the translated text. If you select text, the output will be the translated audio.",
-        examples=[
-            ["Audio", None, "", "en", "fr"],
-            ["Text", None, "Hello, how are you?", "en", "fr"]
-        ]
-    )
+    # Create the Gradio interface with improved input handling
+    with gr.Blocks(title="Real-time Language Translator") as demo:
+        gr.Markdown("# Real-time Language Translator")
+        gr.Markdown("Choose between audio or text input. The system will translate and provide both text and audio output.")
+        
+        input_type = gr.Radio(choices=["Audio", "Text"], value="Audio", label="Input Type")
+        
+        with gr.Row():
+            with gr.Column():
+                audio_input = gr.Audio(sources=["microphone"], type="numpy", label="Input Audio")
+                text_input = gr.Textbox(label="Input Text")
+                source_lang = gr.Dropdown(choices=list(translator.languages.keys()), value="en", label="Source Language")
+                target_lang = gr.Dropdown(choices=list(translator.languages.keys()), value="fr", label="Target Language")
+                translate_button = gr.Button("Translate")
+            
+            with gr.Column():
+                output_audio = gr.Audio(label="Translated Audio")
+                original_text = gr.Textbox(label="Original Text")
+                translated_text = gr.Textbox(label="Translated Text")
+        
+        # Show/hide input elements based on selection
+        def update_visibility(input_choice):
+            if input_choice == "Audio":
+                return gr.update(visible=True), gr.update(visible=False)
+            else:
+                return gr.update(visible=False), gr.update(visible=True)
+        
+        input_type.change(fn=update_visibility, inputs=input_type, outputs=[audio_input, text_input])
+        
+        # Trigger translation when button is clicked
+        translate_button.click(
+            fn=translator.process_input,
+            inputs=[input_type, audio_input, text_input, source_lang, target_lang],
+            outputs=[output_audio, original_text, translated_text]
+        )
+        
+        # Examples
+        gr.Examples(
+            examples=[
+                ["Text", None, "Hello, how are you?", "en", "fr"],
+                ["Text", None, "I love learning new languages", "en", "es"],
+                ["Text", None, "This is a great translation tool", "en", "de"]
+            ],
+            inputs=[input_type, audio_input, text_input, source_lang, target_lang]
+        )
+        
     return demo
 
 if __name__ == "__main__":
     demo = create_gradio_interface()
     demo.launch(share=True, debug=True)
-    

@@ -6,7 +6,5 @@ deep-translator
 gtts
 librosa
 soundfile
-librosa
-huggingface_hub
-transformers>=4.36.2
-accelerate>=0.25.0
+
+

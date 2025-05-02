@@ -9,6 +9,6 @@ app_file: app.py
 pinned: false
 ---
 ### 🔗 Live Demo
-Check out the running app here: [Real-time Language Translator](https://huggingface.co/spaces/yourusername/language_translator)
+Check out the running app here: [language_translator](https://huggingface.co/spaces/yourusername/language_translator)
 
 Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
